@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Sleep Calendar</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            appbg: 'rgb(var(--app-bg) / <alpha-value>)',
+            card: 'rgb(var(--card-bg) / <alpha-value>)',
+            line: 'rgb(var(--line) / <alpha-value>)',
+            textmain: 'rgb(var(--text-main) / <alpha-value>)',
+            textmuted: 'rgb(var(--text-muted) / <alpha-value>)',
+            accent: 'rgb(var(--accent) / <alpha-value>)'
+          }
+        }
+      }
+    };
+  </script>
+</head>
+
+<body class="min-h-full bg-appbg text-textmain transition-colors duration-200">
+  <div class="mx-auto w-full max-w-3xl px-3 py-4 sm:px-5">
+
+    <!-- Header -->
+    <header class="mb-4 flex items-center justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-bold sm:text-2xl">Sleep Calendar</h1>
+        <p class="mt-0.5 text-xs text-textmuted">Track sleep at bedtime and wake-up the next morning.</p>
+      </div>
+
+      <button id="themeBtn"
+        type="button"
+        class="shrink-0 rounded-xl border border-line bg-card px-3 py-2 text-sm font-medium text-textmain shadow-sm hover:opacity-80"
+        aria-label="Toggle theme">
+        <span id="themeIcon">☀️</span>
+      </button>
+    </header>
+
+    <!-- Backup controls -->
+    <div class="mb-4 flex gap-2">
+      <button id="exportBtn" type="button"
+        class="flex-1 rounded-xl border border-line bg-card px-3 py-2 text-sm font-medium text-textmain shadow-sm hover:opacity-80">
+        Export JSON
+      </button>
+      <button id="importBtn" type="button"
+        class="flex-1 rounded-xl border border-line bg-card px-3 py-2 text-sm font-medium text-textmain shadow-sm hover:opacity-80">
+        Import JSON
+      </button>
+      <input id="fileInput" type="file" accept=".json,application/json" class="hidden">
+    </div>
+
+    <!-- Month navigation -->
+    <section class="mb-3 rounded-2xl border border-line bg-card p-3 shadow-sm">
+      <div class="flex items-center justify-between gap-2">
+        <button id="prevBtn" type="button"
+          class="rounded-xl border border-line px-3 py-2 text-lg leading-none text-textmain hover:opacity-80"
+          aria-label="Previous month">‹</button>
+
+        <h2 id="monthTitle" class="min-w-0 text-center text-lg font-bold text-textmain"></h2>
+
+        <button id="nextBtn" type="button"
+          class="rounded-xl border border-line px-3 py-2 text-lg leading-none text-textmain hover:opacity-80"
+          aria-label="Next month">›</button>
+      </div>
+    </section>
+
+    <!-- Summary -->
+    <section class="mb-3 grid grid-cols-3 gap-2">
+      <div class="rounded-2xl border border-line bg-card p-3 text-center shadow-sm">
+        <div class="text-xs text-textmuted">Average</div>
+        <div id="avgStat" class="mt-1 text-sm font-bold text-textmain">—</div>
+      </div>
+      <div class="rounded-2xl border border-line bg-card p-3 text-center shadow-sm">
+        <div class="text-xs text-textmuted">Complete</div>
+        <div id="completeStat" class="mt-1 text-sm font-bold text-textmain">0</div>
+      </div>
+      <div class="rounded-2xl border border-line bg-card p-3 text-center shadow-sm">
+        <div class="text-xs text-textmuted">Longest</div>
+        <div id="longestStat" class="mt-1 text-sm font-bold text-textmain">—</div>
+      </div>
+    </section>
+
+    <!-- Calendar -->
+    <section class="overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
+      <div class="grid grid-cols-7 border-b border-line">
+        <div class="py-2 text-center text-xs font-bold text-textmuted">Sun</div>
+        <div class="py-2 text-center text-xs font-bold text-textmuted">Mon</div>
+        <div class="py-2 text-center text-xs font-bold text-textmuted">Tue</div>
+        <div class="py-2 text-center text-xs font-bold text-textmuted">Wed</div>
+        <div class="py-2 text-center text-xs font-bold text-textmuted">Thu</div>
+        <div class="py-2 text-center text-xs font-bold text-textmuted">Fri</div>
+        <div class="py-2 text-center text-xs font-bold text-textmuted">Sat</div>
+      </div>
+      <div id="calendar" class="grid grid-cols-7"></div>
+    </section>
+
+    <p class="mt-3 text-center text-xs text-textmuted">
+      Tap a date to record that date's sleep or wake event.
+    </p>
+  </div>
+
+  <!-- Entry dialog -->
+  <div id="entryModal" class="fixed inset-0 z-50 hidden items-end justify-center bg-black/50 p-3 sm:items-center">
+    <div class="w-full max-w-md rounded-2xl border border-line bg-card p-4 shadow-2xl">
+      <div class="mb-4 flex items-center justify-between">
+        <div>
+          <h3 id="modalTitle" class="text-lg font-bold text-textmain"></h3>
+          <p class="text-xs text-textmuted">Sleep and wake are stored on the date you select.</p>
+        </div>
+        <button id="closeModal" type="button"
+          class="rounded-lg px-2 py-1 text-xl text-textmuted hover:opacity-70">×</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium text-textmain">🌙 Sleep</span>
+          <input id="sleepInput" type="time"
+            class="w-full rounded-xl border border-line bg-appbg px-3 py-3 text-base text-textmain outline-none focus:ring-2 focus:ring-accent">
+        </label>
+
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium text-textmain">☀️ Wake</span>
+          <input id="wakeInput" type="time"
+            class="w-full rounded-xl border border-line bg-appbg px-3 py-3 text-base text-textmain outline-none focus:ring-2 focus:ring-accent">
+        </label>
+      </div>
+
+      <div id="pairHint" class="mt-3 rounded-xl bg-appbg p-3 text-xs text-textmuted"></div>
+
+      <div class="mt-4 flex gap-2">
+        <button id="clearBtn" type="button"
+          class="rounded-xl border border-line px-4 py-3 text-sm font-medium text-textmain hover:opacity-80">
+          Clear
+        </button>
+        <button id="saveBtn" type="button"
+          class="flex-1 rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white hover:opacity-90">
+          Save
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import dialog -->
+  <div id="importModal" class="fixed inset-0 z-50 hidden items-end justify-center bg-black/50 p-3 sm:items-center">
+    <div class="w-full max-w-md rounded-2xl border border-line bg-card p-4 shadow-2xl">
+      <h3 class="text-lg font-bold text-textmain">Restore backup</h3>
+      <p class="mt-1 text-sm text-textmuted">Choose how the imported records should be applied.</p>
+
+      <div class="mt-4 grid grid-cols-2 gap-2">
+        <button id="mergeBtn" type="button"
+          class="rounded-xl border border-line px-3 py-3 text-sm font-medium text-textmain hover:opacity-80">
+          Merge
+        </button>
+        <button id="replaceBtn" type="button"
+          class="rounded-xl bg-accent px-3 py-3 text-sm font-bold text-white hover:opacity-90">
+          Replace
+        </button>
+      </div>
+
+      <button id="cancelImport" type="button"
+        class="mt-2 w-full rounded-xl border border-line px-3 py-3 text-sm text-textmain hover:opacity-80">
+        Cancel
+      </button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const STORAGE_KEY = 'sleepCalendarData_v2';
+  const THEME_KEY = 'sleepCalendarTheme_v2';
+
+  let records = {};
+  let viewDate = new Date();
+  let selectedDate = null;
+  let importedBackup = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  function setTheme(theme) {
+    const dark = theme === 'dark';
+    document.documentElement.classList.toggle('dark', dark);
+    document.documentElement.style.setProperty('--app-bg', dark ? '15 23 42' : '248 250 252');
+    document.documentElement.style.setProperty('--card-bg', dark ? '30 41 59' : '255 255 255');
+    document.documentElement.style.setProperty('--line', dark ? '71 85 105' : '226 232 240');
+    document.documentElement.style.setProperty('--text-main', dark ? '248 250 252' : '15 23 42');
+    document.documentElement.style.setProperty('--text-muted', dark ? '203 213 225' : '71 85 105');
+    document.documentElement.style.setProperty('--accent', dark ? '59 130 246' : '37 99 235');
+    $('themeIcon').textContent = dark ? '🌙' : '☀️';
+    localStorage.setItem(THEME_KEY, theme);
+  }
+
+  function loadTheme() {
+    setTheme(localStorage.getItem(THEME_KEY) || 'light');
+  }
+
+  function loadRecords() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        records = parsed;
+      }
+    } catch (e) {
+      console.error('Could not load sleep data:', e);
+      records = {};
+    }
+  }
+
+  function saveRecords() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+  }
+
+  function dateKey(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function fromKey(key) {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function nextDateKey(key) {
+    const d = fromKey(key);
+    d.setDate(d.getDate() + 1);
+    return dateKey(d);
+  }
+
+  function previousDateKey(key) {
+    const d = fromKey(key);
+    d.setDate(d.getDate() - 1);
+    return dateKey(d);
+  }
+
+  function minutes(time) {
+    if (!time) return null;
+    const [h, m] = time.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  function durationFor(sleepKey) {
+    const sleep = records[sleepKey]?.sleep;
+    const wakeKey = nextDateKey(sleepKey);
+    const wake = records[wakeKey]?.wake;
+    if (!sleep || !wake) return null;
+
+    const start = minutes(sleep);
+    const end = minutes(wake);
+
+    // Sleep is entered against the night-start date, while wake is entered
+    // against the following calendar date. Compare the two clock times
+    // directly and wrap across midnight.
+    // Examples:
+    // 01:30 -> 07:30 = 6h
+    // 23:00 -> 07:00 = 8h
+    let duration = end - start;
+    if (duration <= 0) duration += 24 * 60;
+
+    // Reject impossible/invalid values rather than displaying a huge duration.
+    if (duration > 24 * 60) return null;
+    return duration;
+  }
+
+  function formatDuration(totalMinutes) {
+    if (totalMinutes == null) return '—';
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
+
+  function formatTime(time) {
+    if (!time) return '';
+    const [h, m] = time.split(':').map(Number);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  function renderStats() {
+    const values = [];
+    Object.keys(records).sort().forEach(key => {
+      const d = durationFor(key);
+      if (d != null) values.push(d);
+    });
+
+    if (!values.length) {
+      $('avgStat').textContent = '—';
+      $('longestStat').textContent = '—';
+      $('completeStat').textContent = '0';
+      return;
+    }
+
+    const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    $('avgStat').textContent = formatDuration(avg);
+    $('longestStat').textContent = formatDuration(Math.max(...values));
+    $('completeStat').textContent = String(values.length);
+  }
+
+  function renderCalendar() {
+    const calendar = $('calendar');
+    calendar.innerHTML = '';
+
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+
+    $('monthTitle').textContent = new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      year: 'numeric'
+    }).format(viewDate);
+
+    const first = new Date(year, month, 1);
+    const startOffset = first.getDay(); // Sunday = 0
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+    const todayKey = dateKey(new Date());
+
+    for (let i = 0; i < totalCells; i++) {
+      const dayNumber = i - startOffset + 1;
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'min-w-0 h-[86px] border-b border-r border-line bg-card p-1.5 text-left align-top hover:bg-appbg sm:h-[96px] sm:p-2';
+
+      if (dayNumber < 1 || dayNumber > daysInMonth) {
+        cell.disabled = true;
+        cell.classList.add('bg-appbg', 'opacity-40');
+        calendar.appendChild(cell);
+        continue;
+      }
+
+      const d = new Date(year, month, dayNumber);
+      const key = dateKey(d);
+      const rec = records[key] || {};
+      const nextKey = nextDateKey(key);
+      const nextRec = records[nextKey] || {};
+      const duration = durationFor(key);
+      const isToday = key === todayKey;
+
+      const number = document.createElement('div');
+      number.className = isToday
+        ? 'mb-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-white'
+        : 'mb-1 inline-flex h-6 min-w-6 items-center justify-center px-1 text-xs font-bold text-textmain';
+      number.textContent = dayNumber;
+      cell.appendChild(number);
+
+      if (rec.sleep) {
+        const el = document.createElement('div');
+        el.className = 'whitespace-nowrap text-[9px] font-medium leading-4 text-textmain sm:text-xs';
+        el.textContent = `🌙 ${formatTime(rec.sleep)}`;
+        cell.appendChild(el);
+      }
+
+      if (rec.wake) {
+        const el = document.createElement('div');
+        el.className = 'whitespace-nowrap text-[9px] font-medium leading-4 text-textmain sm:text-xs';
+        el.textContent = `☀️ ${formatTime(rec.wake)}`;
+        cell.appendChild(el);
+      }
+
+      if (rec.sleep && duration != null) {
+        const el = document.createElement('div');
+        el.className = 'mt-1 whitespace-nowrap rounded-md bg-accent/10 px-1 py-0.5 text-[9px] font-bold text-textmain sm:text-xs';
+        el.textContent = formatDuration(duration);
+        cell.appendChild(el);
+      } else if (rec.sleep) {
+        const el = document.createElement('div');
+        el.className = 'mt-1 whitespace-nowrap text-[9px] text-textmuted sm:text-xs';
+        el.textContent = 'Pending wake';
+        cell.appendChild(el);
+      }
+
+      if (rec.wake && !rec.sleep) {
+        const prevSleep = records[previousDateKey(key)]?.sleep;
+        if (prevSleep) {
+          const el = document.createElement('div');
+          el.className = 'mt-1 whitespace-nowrap text-[9px] font-medium text-textmuted sm:text-xs';
+          el.textContent = 'Completes prior night';
+          cell.appendChild(el);
+        }
+      }
+
+      calendar.appendChild(cell);
+      cell.addEventListener('click', () => openEntry(key));
+    }
+
+    renderStats();
+  }
+
+  function openEntry(key) {
+    selectedDate = key;
+    const rec = records[key] || {};
+    $('modalTitle').textContent = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    }).format(fromKey(key));
+
+    $('sleepInput').value = rec.sleep || '';
+    $('wakeInput').value = rec.wake || '';
+
+    const previousSleep = records[previousDateKey(key)]?.sleep;
+    let hint = 'Enter the event that happened on this date.';
+
+    if (previousSleep && rec.wake) {
+      hint = `☀️ This wake time completes ${previousDateKey(key)}: ${formatTime(previousSleep)} → ${formatTime(rec.wake)} = ${formatDuration(durationFor(previousDateKey(key)))}`;
+    } else if (rec.sleep && !rec.wake) {
+      hint = '🌙 Sleep is saved. Tomorrow, enter the wake time on tomorrow’s date; the duration will appear on this night.';
+    } else if (rec.wake && !rec.sleep) {
+      hint = '☀️ Wake time is saved. If the previous date has a sleep time, this wake time completes that sleep session.';
+    }
+
+    $('pairHint').textContent = hint;
+    showModal('entryModal');
+  }
+
+  function showModal(id) {
+    const el = $(id);
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+  }
+
+  function hideModal(id) {
+    const el = $(id);
+    el.classList.add('hidden');
+    el.classList.remove('flex');
+  }
+
+  function saveEntry() {
+    if (!selectedDate) return;
+
+    const sleep = $('sleepInput').value;
+    const wake = $('wakeInput').value;
+
+    if (!sleep && !wake) {
+      delete records[selectedDate];
+    } else {
+      records[selectedDate] = {
+        sleep: sleep || '',
+        wake: wake || ''
+      };
+    }
+
+    saveRecords();
+    hideModal('entryModal');
+    renderCalendar();
+  }
+
+  function clearEntry() {
+    if (!selectedDate) return;
+    delete records[selectedDate];
+    saveRecords();
+    hideModal('entryModal');
+    renderCalendar();
+  }
+
+  function exportBackup() {
+    const backup = {
+      app: 'Sleep Calendar',
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      records
+    };
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const today = dateKey(new Date());
+    a.href = url;
+    a.download = `sleep-calendar-backup-${today}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportFile(file) {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const imported = parsed?.records ?? parsed;
+
+        if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
+          throw new Error('Invalid backup format');
+        }
+
+        const cleaned = {};
+        for (const [key, value] of Object.entries(imported)) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+          if (!value || typeof value !== 'object') continue;
+
+          cleaned[key] = {
+            sleep: typeof value.sleep === 'string' ? value.sleep : '',
+            wake: typeof value.wake === 'string' ? value.wake : ''
+          };
+        }
+
+        importedBackup = cleaned;
+        showModal('importModal');
+      } catch (e) {
+        alert('This does not appear to be a valid Sleep Calendar JSON backup.');
+      }
+    };
+
+    reader.readAsText(file);
+  }
+
+  function applyImport(mode) {
+    if (!importedBackup) return;
+
+    if (mode === 'replace') {
+      records = importedBackup;
+    } else {
+      records = {...records, ...importedBackup};
+    }
+
+    saveRecords();
+    importedBackup = null;
+    hideModal('importModal');
+    renderCalendar();
+  }
+
+  $('themeBtn').addEventListener('click', () => {
+    const current = localStorage.getItem(THEME_KEY) || 'light';
+    setTheme(current === 'dark' ? 'light' : 'dark');
+  });
+
+  $('prevBtn').addEventListener('click', () => {
+    viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
+    renderCalendar();
+  });
+
+  $('nextBtn').addEventListener('click', () => {
+    viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
+    renderCalendar();
+  });
+
+  $('closeModal').addEventListener('click', () => hideModal('entryModal'));
+  $('saveBtn').addEventListener('click', saveEntry);
+  $('clearBtn').addEventListener('click', clearEntry);
+
+  $('entryModal').addEventListener('click', (e) => {
+    if (e.target === $('entryModal')) hideModal('entryModal');
+  });
+
+  $('cancelImport').addEventListener('click', () => {
+    importedBackup = null;
+    hideModal('importModal');
+  });
+
+  $('mergeBtn').addEventListener('click', () => applyImport('merge'));
+  $('replaceBtn').addEventListener('click', () => applyImport('replace'));
+
+  $('exportBtn').addEventListener('click', exportBackup);
+
+  $('importBtn').addEventListener('click', () => {
+    $('fileInput').value = '';
+    $('fileInput').click();
+  });
+
+  $('fileInput').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) handleImportFile(file);
+  });
+
+  loadTheme();
+  loadRecords();
+  renderCalendar();
+})();
+</script>
+</body>
+</html>
