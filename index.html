@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="en" class="h-full">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>Sleep Calendar</title>
+  <title>SleepLog</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -30,12 +31,11 @@
     <!-- Header -->
     <header class="mb-4 flex items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-bold sm:text-2xl">Sleep Calendar</h1>
+        <h1 class="text-xl font-bold sm:text-2xl">SleepLog</h1>
         <p class="mt-0.5 text-xs text-textmuted">Track sleep at bedtime and wake-up the next morning.</p>
       </div>
 
-      <button id="themeBtn"
-        type="button"
+      <button id="themeBtn" type="button"
         class="shrink-0 rounded-xl border border-line bg-card px-3 py-2 text-sm font-medium text-textmain shadow-sm hover:opacity-80"
         aria-label="Toggle theme">
         <span id="themeIcon">☀️</span>
@@ -170,411 +170,412 @@
     </div>
   </div>
 
-<script>
-(() => {
-  const STORAGE_KEY = 'sleepCalendarData_v2';
-  const THEME_KEY = 'sleepCalendarTheme_v2';
+  <script>
+    (() => {
+      const STORAGE_KEY = 'sleepCalendarData_v2';
+      const THEME_KEY = 'sleepCalendarTheme_v2';
 
-  let records = {};
-  let viewDate = new Date();
-  let selectedDate = null;
-  let importedBackup = null;
+      let records = {};
+      let viewDate = new Date();
+      let selectedDate = null;
+      let importedBackup = null;
 
-  const $ = (id) => document.getElementById(id);
+      const $ = (id) => document.getElementById(id);
 
-  function setTheme(theme) {
-    const dark = theme === 'dark';
-    document.documentElement.classList.toggle('dark', dark);
-    document.documentElement.style.setProperty('--app-bg', dark ? '15 23 42' : '248 250 252');
-    document.documentElement.style.setProperty('--card-bg', dark ? '30 41 59' : '255 255 255');
-    document.documentElement.style.setProperty('--line', dark ? '71 85 105' : '226 232 240');
-    document.documentElement.style.setProperty('--text-main', dark ? '248 250 252' : '15 23 42');
-    document.documentElement.style.setProperty('--text-muted', dark ? '203 213 225' : '71 85 105');
-    document.documentElement.style.setProperty('--accent', dark ? '59 130 246' : '37 99 235');
-    $('themeIcon').textContent = dark ? '🌙' : '☀️';
-    localStorage.setItem(THEME_KEY, theme);
-  }
-
-  function loadTheme() {
-    setTheme(localStorage.getItem(THEME_KEY) || 'light');
-  }
-
-  function loadRecords() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        records = parsed;
-      }
-    } catch (e) {
-      console.error('Could not load sleep data:', e);
-      records = {};
-    }
-  }
-
-  function saveRecords() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  }
-
-  function dateKey(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  function fromKey(key) {
-    const [y, m, d] = key.split('-').map(Number);
-    return new Date(y, m - 1, d);
-  }
-
-  function nextDateKey(key) {
-    const d = fromKey(key);
-    d.setDate(d.getDate() + 1);
-    return dateKey(d);
-  }
-
-  function previousDateKey(key) {
-    const d = fromKey(key);
-    d.setDate(d.getDate() - 1);
-    return dateKey(d);
-  }
-
-  function minutes(time) {
-    if (!time) return null;
-    const [h, m] = time.split(':').map(Number);
-    return h * 60 + m;
-  }
-
-  function durationFor(sleepKey) {
-    const sleep = records[sleepKey]?.sleep;
-    const wakeKey = nextDateKey(sleepKey);
-    const wake = records[wakeKey]?.wake;
-    if (!sleep || !wake) return null;
-
-    const start = minutes(sleep);
-    const end = minutes(wake);
-
-    // Sleep is entered against the night-start date, while wake is entered
-    // against the following calendar date. Compare the two clock times
-    // directly and wrap across midnight.
-    // Examples:
-    // 01:30 -> 07:30 = 6h
-    // 23:00 -> 07:00 = 8h
-    let duration = end - start;
-    if (duration <= 0) duration += 24 * 60;
-
-    // Reject impossible/invalid values rather than displaying a huge duration.
-    if (duration > 24 * 60) return null;
-    return duration;
-  }
-
-  function formatDuration(totalMinutes) {
-    if (totalMinutes == null) return '—';
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return `${h}h ${String(m).padStart(2, '0')}m`;
-  }
-
-  function formatTime(time) {
-    if (!time) return '';
-    const [h, m] = time.split(':').map(Number);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  }
-
-  function renderStats() {
-    const values = [];
-    Object.keys(records).sort().forEach(key => {
-      const d = durationFor(key);
-      if (d != null) values.push(d);
-    });
-
-    if (!values.length) {
-      $('avgStat').textContent = '—';
-      $('longestStat').textContent = '—';
-      $('completeStat').textContent = '0';
-      return;
-    }
-
-    const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-    $('avgStat').textContent = formatDuration(avg);
-    $('longestStat').textContent = formatDuration(Math.max(...values));
-    $('completeStat').textContent = String(values.length);
-  }
-
-  function renderCalendar() {
-    const calendar = $('calendar');
-    calendar.innerHTML = '';
-
-    const year = viewDate.getFullYear();
-    const month = viewDate.getMonth();
-
-    $('monthTitle').textContent = new Intl.DateTimeFormat('en-US', {
-      month: 'long',
-      year: 'numeric'
-    }).format(viewDate);
-
-    const first = new Date(year, month, 1);
-    const startOffset = first.getDay(); // Sunday = 0
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
-    const todayKey = dateKey(new Date());
-
-    for (let i = 0; i < totalCells; i++) {
-      const dayNumber = i - startOffset + 1;
-      const cell = document.createElement('button');
-      cell.type = 'button';
-      cell.className = 'min-w-0 h-[86px] border-b border-r border-line bg-card p-1.5 text-left align-top hover:bg-appbg sm:h-[96px] sm:p-2';
-
-      if (dayNumber < 1 || dayNumber > daysInMonth) {
-        cell.disabled = true;
-        cell.classList.add('bg-appbg', 'opacity-40');
-        calendar.appendChild(cell);
-        continue;
+      function setTheme(theme) {
+        const dark = theme === 'dark';
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.setProperty('--app-bg', dark ? '15 23 42' : '248 250 252');
+        document.documentElement.style.setProperty('--card-bg', dark ? '30 41 59' : '255 255 255');
+        document.documentElement.style.setProperty('--line', dark ? '71 85 105' : '226 232 240');
+        document.documentElement.style.setProperty('--text-main', dark ? '248 250 252' : '15 23 42');
+        document.documentElement.style.setProperty('--text-muted', dark ? '203 213 225' : '71 85 105');
+        document.documentElement.style.setProperty('--accent', dark ? '59 130 246' : '37 99 235');
+        $('themeIcon').textContent = dark ? '🌙' : '☀️';
+        localStorage.setItem(THEME_KEY, theme);
       }
 
-      const d = new Date(year, month, dayNumber);
-      const key = dateKey(d);
-      const rec = records[key] || {};
-      const nextKey = nextDateKey(key);
-      const nextRec = records[nextKey] || {};
-      const duration = durationFor(key);
-      const isToday = key === todayKey;
-
-      const number = document.createElement('div');
-      number.className = isToday
-        ? 'mb-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-white'
-        : 'mb-1 inline-flex h-6 min-w-6 items-center justify-center px-1 text-xs font-bold text-textmain';
-      number.textContent = dayNumber;
-      cell.appendChild(number);
-
-      if (rec.sleep) {
-        const el = document.createElement('div');
-        el.className = 'whitespace-nowrap text-[9px] font-medium leading-4 text-textmain sm:text-xs';
-        el.textContent = `🌙 ${formatTime(rec.sleep)}`;
-        cell.appendChild(el);
+      function loadTheme() {
+        setTheme(localStorage.getItem(THEME_KEY) || 'light');
       }
 
-      if (rec.wake) {
-        const el = document.createElement('div');
-        el.className = 'whitespace-nowrap text-[9px] font-medium leading-4 text-textmain sm:text-xs';
-        el.textContent = `☀️ ${formatTime(rec.wake)}`;
-        cell.appendChild(el);
-      }
-
-      if (rec.sleep && duration != null) {
-        const el = document.createElement('div');
-        el.className = 'mt-1 whitespace-nowrap rounded-md bg-accent/10 px-1 py-0.5 text-[9px] font-bold text-textmain sm:text-xs';
-        el.textContent = formatDuration(duration);
-        cell.appendChild(el);
-      } else if (rec.sleep) {
-        const el = document.createElement('div');
-        el.className = 'mt-1 whitespace-nowrap text-[9px] text-textmuted sm:text-xs';
-        el.textContent = 'Pending wake';
-        cell.appendChild(el);
-      }
-
-      if (rec.wake && !rec.sleep) {
-        const prevSleep = records[previousDateKey(key)]?.sleep;
-        if (prevSleep) {
-          const el = document.createElement('div');
-          el.className = 'mt-1 whitespace-nowrap text-[9px] font-medium text-textmuted sm:text-xs';
-          el.textContent = 'Completes prior night';
-          cell.appendChild(el);
+      function loadRecords() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            records = parsed;
+          }
+        } catch (e) {
+          console.error('Could not load sleep data:', e);
+          records = {};
         }
       }
 
-      calendar.appendChild(cell);
-      cell.addEventListener('click', () => openEntry(key));
-    }
+      function saveRecords() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+      }
 
-    renderStats();
-  }
+      function dateKey(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
 
-  function openEntry(key) {
-    selectedDate = key;
-    const rec = records[key] || {};
-    $('modalTitle').textContent = new Intl.DateTimeFormat('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    }).format(fromKey(key));
+      function fromKey(key) {
+        const [y, m, d] = key.split('-').map(Number);
+        return new Date(y, m - 1, d);
+      }
 
-    $('sleepInput').value = rec.sleep || '';
-    $('wakeInput').value = rec.wake || '';
+      function nextDateKey(key) {
+        const d = fromKey(key);
+        d.setDate(d.getDate() + 1);
+        return dateKey(d);
+      }
 
-    const previousSleep = records[previousDateKey(key)]?.sleep;
-    let hint = 'Enter the event that happened on this date.';
+      function previousDateKey(key) {
+        const d = fromKey(key);
+        d.setDate(d.getDate() - 1);
+        return dateKey(d);
+      }
 
-    if (previousSleep && rec.wake) {
-      hint = `☀️ This wake time completes ${previousDateKey(key)}: ${formatTime(previousSleep)} → ${formatTime(rec.wake)} = ${formatDuration(durationFor(previousDateKey(key)))}`;
-    } else if (rec.sleep && !rec.wake) {
-      hint = '🌙 Sleep is saved. Tomorrow, enter the wake time on tomorrow’s date; the duration will appear on this night.';
-    } else if (rec.wake && !rec.sleep) {
-      hint = '☀️ Wake time is saved. If the previous date has a sleep time, this wake time completes that sleep session.';
-    }
+      function minutes(time) {
+        if (!time) return null;
+        const [h, m] = time.split(':').map(Number);
+        return h * 60 + m;
+      }
 
-    $('pairHint').textContent = hint;
-    showModal('entryModal');
-  }
+      function durationFor(sleepKey) {
+        const sleep = records[sleepKey]?.sleep;
+        const wakeKey = nextDateKey(sleepKey);
+        const wake = records[wakeKey]?.wake;
+        if (!sleep || !wake) return null;
 
-  function showModal(id) {
-    const el = $(id);
-    el.classList.remove('hidden');
-    el.classList.add('flex');
-  }
+        const start = minutes(sleep);
+        const end = minutes(wake);
 
-  function hideModal(id) {
-    const el = $(id);
-    el.classList.add('hidden');
-    el.classList.remove('flex');
-  }
+        // Sleep is entered against the night-start date, while wake is entered
+        // against the following calendar date. Compare the two clock times
+        // directly and wrap across midnight.
+        // Examples:
+        // 01:30 -> 07:30 = 6h
+        // 23:00 -> 07:00 = 8h
+        let duration = end - start;
+        if (duration <= 0) duration += 24 * 60;
 
-  function saveEntry() {
-    if (!selectedDate) return;
+        // Reject impossible/invalid values rather than displaying a huge duration.
+        if (duration > 24 * 60) return null;
+        return duration;
+      }
 
-    const sleep = $('sleepInput').value;
-    const wake = $('wakeInput').value;
+      function formatDuration(totalMinutes) {
+        if (totalMinutes == null) return '—';
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return `${h}h ${String(m).padStart(2, '0')}m`;
+      }
 
-    if (!sleep && !wake) {
-      delete records[selectedDate];
-    } else {
-      records[selectedDate] = {
-        sleep: sleep || '',
-        wake: wake || ''
-      };
-    }
+      function formatTime(time) {
+        if (!time) return '';
+        const [h, m] = time.split(':').map(Number);
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
 
-    saveRecords();
-    hideModal('entryModal');
-    renderCalendar();
-  }
+      function renderStats() {
+        const values = [];
+        Object.keys(records).sort().forEach(key => {
+          const d = durationFor(key);
+          if (d != null) values.push(d);
+        });
 
-  function clearEntry() {
-    if (!selectedDate) return;
-    delete records[selectedDate];
-    saveRecords();
-    hideModal('entryModal');
-    renderCalendar();
-  }
-
-  function exportBackup() {
-    const backup = {
-      app: 'Sleep Calendar',
-      version: 2,
-      exportedAt: new Date().toISOString(),
-      records
-    };
-
-    const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const today = dateKey(new Date());
-    a.href = url;
-    a.download = `sleep-calendar-backup-${today}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function handleImportFile(file) {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(reader.result);
-        const imported = parsed?.records ?? parsed;
-
-        if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
-          throw new Error('Invalid backup format');
+        if (!values.length) {
+          $('avgStat').textContent = '—';
+          $('longestStat').textContent = '—';
+          $('completeStat').textContent = '0';
+          return;
         }
 
-        const cleaned = {};
-        for (const [key, value] of Object.entries(imported)) {
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
-          if (!value || typeof value !== 'object') continue;
+        const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+        $('avgStat').textContent = formatDuration(avg);
+        $('longestStat').textContent = formatDuration(Math.max(...values));
+        $('completeStat').textContent = String(values.length);
+      }
 
-          cleaned[key] = {
-            sleep: typeof value.sleep === 'string' ? value.sleep : '',
-            wake: typeof value.wake === 'string' ? value.wake : ''
+      function renderCalendar() {
+        const calendar = $('calendar');
+        calendar.innerHTML = '';
+
+        const year = viewDate.getFullYear();
+        const month = viewDate.getMonth();
+
+        $('monthTitle').textContent = new Intl.DateTimeFormat('en-US', {
+          month: 'long',
+          year: 'numeric'
+        }).format(viewDate);
+
+        const first = new Date(year, month, 1);
+        const startOffset = first.getDay(); // Sunday = 0
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+        const todayKey = dateKey(new Date());
+
+        for (let i = 0; i < totalCells; i++) {
+          const dayNumber = i - startOffset + 1;
+          const cell = document.createElement('button');
+          cell.type = 'button';
+          cell.className = 'min-w-0 h-[86px] border-b border-r border-line bg-card p-1.5 text-left align-top hover:bg-appbg sm:h-[96px] sm:p-2';
+
+          if (dayNumber < 1 || dayNumber > daysInMonth) {
+            cell.disabled = true;
+            cell.classList.add('bg-appbg', 'opacity-40');
+            calendar.appendChild(cell);
+            continue;
+          }
+
+          const d = new Date(year, month, dayNumber);
+          const key = dateKey(d);
+          const rec = records[key] || {};
+          const nextKey = nextDateKey(key);
+          const nextRec = records[nextKey] || {};
+          const duration = durationFor(key);
+          const isToday = key === todayKey;
+
+          const number = document.createElement('div');
+          number.className = isToday
+            ? 'mb-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-white'
+            : 'mb-1 inline-flex h-6 min-w-6 items-center justify-center px-1 text-xs font-bold text-textmain';
+          number.textContent = dayNumber;
+          cell.appendChild(number);
+
+          if (rec.sleep) {
+            const el = document.createElement('div');
+            el.className = 'whitespace-nowrap text-[9px] font-medium leading-4 text-textmain sm:text-xs';
+            el.textContent = `🌙 ${formatTime(rec.sleep)}`;
+            cell.appendChild(el);
+          }
+
+          if (rec.wake) {
+            const el = document.createElement('div');
+            el.className = 'whitespace-nowrap text-[9px] font-medium leading-4 text-textmain sm:text-xs';
+            el.textContent = `☀️ ${formatTime(rec.wake)}`;
+            cell.appendChild(el);
+          }
+
+          if (rec.sleep && duration != null) {
+            const el = document.createElement('div');
+            el.className = 'mt-1 whitespace-nowrap rounded-md bg-accent/10 px-1 py-0.5 text-[9px] font-bold text-textmain sm:text-xs';
+            el.textContent = formatDuration(duration);
+            cell.appendChild(el);
+          } else if (rec.sleep) {
+            const el = document.createElement('div');
+            el.className = 'mt-1 whitespace-nowrap text-[9px] text-textmuted sm:text-xs';
+            el.textContent = 'Pending wake';
+            cell.appendChild(el);
+          }
+
+          if (rec.wake && !rec.sleep) {
+            const prevSleep = records[previousDateKey(key)]?.sleep;
+            if (prevSleep) {
+              const el = document.createElement('div');
+              el.className = 'mt-1 whitespace-nowrap text-[9px] font-medium text-textmuted sm:text-xs';
+              el.textContent = 'Completes prior night';
+              cell.appendChild(el);
+            }
+          }
+
+          calendar.appendChild(cell);
+          cell.addEventListener('click', () => openEntry(key));
+        }
+
+        renderStats();
+      }
+
+      function openEntry(key) {
+        selectedDate = key;
+        const rec = records[key] || {};
+        $('modalTitle').textContent = new Intl.DateTimeFormat('en-US', {
+          weekday: 'long',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        }).format(fromKey(key));
+
+        $('sleepInput').value = rec.sleep || '';
+        $('wakeInput').value = rec.wake || '';
+
+        const previousSleep = records[previousDateKey(key)]?.sleep;
+        let hint = 'Enter the event that happened on this date.';
+
+        if (previousSleep && rec.wake) {
+          hint = `☀️ This wake time completes ${previousDateKey(key)}: ${formatTime(previousSleep)} → ${formatTime(rec.wake)} = ${formatDuration(durationFor(previousDateKey(key)))}`;
+        } else if (rec.sleep && !rec.wake) {
+          hint = '🌙 Sleep is saved. Tomorrow, enter the wake time on tomorrow’s date; the duration will appear on this night.';
+        } else if (rec.wake && !rec.sleep) {
+          hint = '☀️ Wake time is saved. If the previous date has a sleep time, this wake time completes that sleep session.';
+        }
+
+        $('pairHint').textContent = hint;
+        showModal('entryModal');
+      }
+
+      function showModal(id) {
+        const el = $(id);
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+      }
+
+      function hideModal(id) {
+        const el = $(id);
+        el.classList.add('hidden');
+        el.classList.remove('flex');
+      }
+
+      function saveEntry() {
+        if (!selectedDate) return;
+
+        const sleep = $('sleepInput').value;
+        const wake = $('wakeInput').value;
+
+        if (!sleep && !wake) {
+          delete records[selectedDate];
+        } else {
+          records[selectedDate] = {
+            sleep: sleep || '',
+            wake: wake || ''
           };
         }
 
-        importedBackup = cleaned;
-        showModal('importModal');
-      } catch (e) {
-        alert('This does not appear to be a valid Sleep Calendar JSON backup.');
+        saveRecords();
+        hideModal('entryModal');
+        renderCalendar();
       }
-    };
 
-    reader.readAsText(file);
-  }
+      function clearEntry() {
+        if (!selectedDate) return;
+        delete records[selectedDate];
+        saveRecords();
+        hideModal('entryModal');
+        renderCalendar();
+      }
 
-  function applyImport(mode) {
-    if (!importedBackup) return;
+      function exportBackup() {
+        const backup = {
+          app: 'Sleep Calendar',
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          records
+        };
 
-    if (mode === 'replace') {
-      records = importedBackup;
-    } else {
-      records = {...records, ...importedBackup};
-    }
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const today = dateKey(new Date());
+        a.href = url;
+        a.download = `sleep-calendar-backup-${today}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
 
-    saveRecords();
-    importedBackup = null;
-    hideModal('importModal');
-    renderCalendar();
-  }
+      function handleImportFile(file) {
+        const reader = new FileReader();
 
-  $('themeBtn').addEventListener('click', () => {
-    const current = localStorage.getItem(THEME_KEY) || 'light';
-    setTheme(current === 'dark' ? 'light' : 'dark');
-  });
+        reader.onload = () => {
+          try {
+            const parsed = JSON.parse(reader.result);
+            const imported = parsed?.records ?? parsed;
 
-  $('prevBtn').addEventListener('click', () => {
-    viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
-    renderCalendar();
-  });
+            if (!imported || typeof imported !== 'object' || Array.isArray(imported)) {
+              throw new Error('Invalid backup format');
+            }
 
-  $('nextBtn').addEventListener('click', () => {
-    viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
-    renderCalendar();
-  });
+            const cleaned = {};
+            for (const [key, value] of Object.entries(imported)) {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+              if (!value || typeof value !== 'object') continue;
 
-  $('closeModal').addEventListener('click', () => hideModal('entryModal'));
-  $('saveBtn').addEventListener('click', saveEntry);
-  $('clearBtn').addEventListener('click', clearEntry);
+              cleaned[key] = {
+                sleep: typeof value.sleep === 'string' ? value.sleep : '',
+                wake: typeof value.wake === 'string' ? value.wake : ''
+              };
+            }
 
-  $('entryModal').addEventListener('click', (e) => {
-    if (e.target === $('entryModal')) hideModal('entryModal');
-  });
+            importedBackup = cleaned;
+            showModal('importModal');
+          } catch (e) {
+            alert('This does not appear to be a valid Sleep Calendar JSON backup.');
+          }
+        };
 
-  $('cancelImport').addEventListener('click', () => {
-    importedBackup = null;
-    hideModal('importModal');
-  });
+        reader.readAsText(file);
+      }
 
-  $('mergeBtn').addEventListener('click', () => applyImport('merge'));
-  $('replaceBtn').addEventListener('click', () => applyImport('replace'));
+      function applyImport(mode) {
+        if (!importedBackup) return;
 
-  $('exportBtn').addEventListener('click', exportBackup);
+        if (mode === 'replace') {
+          records = importedBackup;
+        } else {
+          records = { ...records, ...importedBackup };
+        }
 
-  $('importBtn').addEventListener('click', () => {
-    $('fileInput').value = '';
-    $('fileInput').click();
-  });
+        saveRecords();
+        importedBackup = null;
+        hideModal('importModal');
+        renderCalendar();
+      }
 
-  $('fileInput').addEventListener('change', (e) => {
-    const file = e.target.files?.[0];
-    if (file) handleImportFile(file);
-  });
+      $('themeBtn').addEventListener('click', () => {
+        const current = localStorage.getItem(THEME_KEY) || 'light';
+        setTheme(current === 'dark' ? 'light' : 'dark');
+      });
 
-  loadTheme();
-  loadRecords();
-  renderCalendar();
-})();
-</script>
+      $('prevBtn').addEventListener('click', () => {
+        viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
+        renderCalendar();
+      });
+
+      $('nextBtn').addEventListener('click', () => {
+        viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
+        renderCalendar();
+      });
+
+      $('closeModal').addEventListener('click', () => hideModal('entryModal'));
+      $('saveBtn').addEventListener('click', saveEntry);
+      $('clearBtn').addEventListener('click', clearEntry);
+
+      $('entryModal').addEventListener('click', (e) => {
+        if (e.target === $('entryModal')) hideModal('entryModal');
+      });
+
+      $('cancelImport').addEventListener('click', () => {
+        importedBackup = null;
+        hideModal('importModal');
+      });
+
+      $('mergeBtn').addEventListener('click', () => applyImport('merge'));
+      $('replaceBtn').addEventListener('click', () => applyImport('replace'));
+
+      $('exportBtn').addEventListener('click', exportBackup);
+
+      $('importBtn').addEventListener('click', () => {
+        $('fileInput').value = '';
+        $('fileInput').click();
+      });
+
+      $('fileInput').addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (file) handleImportFile(file);
+      });
+
+      loadTheme();
+      loadRecords();
+      renderCalendar();
+    })();
+  </script>
 </body>
+
 </html>
